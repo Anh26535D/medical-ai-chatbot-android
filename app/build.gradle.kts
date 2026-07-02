@@ -156,6 +156,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.ai)
     implementation(libs.firebase.config)
+    implementation(libs.firebase.database)
 
     // Room
     implementation(libs.androidx.room.runtime)
@@ -163,7 +164,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     // Location
-    implementation("com.google.android.gms:play-services-location:21.1.0")
+    implementation("com.google.android.gms:play-services-location:21.2.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
