@@ -8,11 +8,14 @@ lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.8.0"
 kotlin = "2.1.0"
 composeBom = "2026.02.01"
+playServicesLocation = "21.2.0"
 room = "2.6.1"
 ksp = "2.1.0-1.0.29"
 firebaseBom = "34.9.0"
 googleServices = "4.4.4"
 paging = "3.3.2"
+espProvisioning = "lib-2.4.4"
+eventbus = "3.3.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -41,6 +44,9 @@ firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.r
 firebase-ai = { group = "com.google.firebase", name = "firebase-ai" }
 firebase-config = { group = "com.google.firebase", name = "firebase-config" }
 firebase-database = { group = "com.google.firebase", name = "firebase-database" }
+play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+esp-provisioning = { group = "com.github.espressif", name = "esp-idf-provisioning-android", version.ref = "espProvisioning" }
+eventbus = { group = "org.greenrobot", name = "eventbus", version.ref = "eventbus" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

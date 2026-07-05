@@ -164,7 +164,11 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     // Location
-    implementation("com.google.android.gms:play-services-location:21.2.0")
+    implementation(libs.play.services.location)
+
+    // SDK Cấp mạng chuẩn của Espressif hỗ trợ đầy đủ mã hóa Security 1 và mã PoP
+    implementation(libs.esp.provisioning)
+    implementation(libs.eventbus)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
