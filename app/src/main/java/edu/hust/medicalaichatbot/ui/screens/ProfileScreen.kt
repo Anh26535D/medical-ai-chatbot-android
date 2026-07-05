@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -146,7 +147,7 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // IoT Monitoring Section
-            IoTMonitoringSection(iotData)
+            IoTMonitoringSection(iotData, iotViewModel)
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -176,23 +177,152 @@ fun ProfileScreen(
 }
 
 @Composable
-fun IoTMonitoringSection(data: IoTData) {
+fun IoTMonitoringSection(data: IoTData, viewModel: IoTViewModel) {
+    val connectionState by viewModel.bleConnectionState.collectAsState()
+    val deviceAddress by viewModel.connectedDeviceAddress.collectAsState()
+    val provisioningStatus by viewModel.provisioningStatus.collectAsState()
+    val suggestedSsid by viewModel.currentSsid.collectAsState()
+    
+    var wifiSsid by remember(suggestedSsid) { mutableStateOf(suggestedSsid) }
+    var wifiPass by remember { mutableStateOf("") }
+    var showWifiConfig by remember { mutableStateOf(false) }
+
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "THIẾT BỊ ĐEO (1020BA49D1C8)",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextGray
-            )
-            
-            StatusBadge(status = data.status, hasFinger = data.hasFinger)
+            Column {
+                Text(
+                    text = "THIẾT BỊ ĐEO (${deviceAddress ?: "1020BA49D1C8"})",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextGray
+                )
+                Text(
+                    text = when(connectionState) {
+                        android.bluetooth.BluetoothProfile.STATE_CONNECTED -> "Đã kết nối BLE"
+                        android.bluetooth.BluetoothProfile.STATE_CONNECTING -> "Đang kết nối..."
+                        else -> if (deviceAddress != null) "Đã nhận diện (Cloud)" else "Dữ liệu mặc định (Cloud)"
+                    },
+                    fontSize = 10.sp,
+                    color = if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) SuccessGreen else TextGray
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (connectionState == android.bluetooth.BluetoothProfile.STATE_DISCONNECTED) {
+                    Text(
+                        text = "KẾT NỐI BLE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue,
+                        modifier = Modifier
+                            .clickable { viewModel.connectBle() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                } else if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
+                    IconButton(onClick = { showWifiConfig = !showWifiConfig }) {
+                        Icon(
+                            Icons.Default.Wifi,
+                            contentDescription = "WiFi Config",
+                            tint = if (showWifiConfig) PrimaryBlue else TextGray,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Icon(
+                        Icons.Default.BluetoothConnected,
+                        contentDescription = null,
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(16.dp).clickable { viewModel.disconnectBle() }
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                StatusBadge(status = data.status, hasFinger = data.hasFinger)
+            }
         }
         
+        // WiFi Configuration Panel
+        if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED && showWifiConfig) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                shadowElevation = 4.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Cài đặt WiFi cho thiết bị",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.Black
+                    )
+                    Text(
+                        text = "Gửi thông tin WiFi để thiết bị tự động cập nhật dữ liệu lên Cloud.",
+                        fontSize = 12.sp,
+                        color = TextGray,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    
+                    OutlinedTextField(
+                        value = wifiSsid,
+                        onValueChange = { wifiSsid = it },
+                        label = { Text("Tên WiFi (SSID)", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    OutlinedTextField(
+                        value = wifiPass,
+                        onValueChange = { wifiPass = it },
+                        label = { Text("Mật khẩu", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Button(
+                        onClick = { viewModel.sendWifiCredentials(wifiSsid, wifiPass) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                        enabled = provisioningStatus != "SENDING"
+                    ) {
+                        if (provisioningStatus == "SENDING") {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("Gửi cấu hình")
+                        }
+                    }
+                    
+                    if (provisioningStatus != null) {
+                        val (statusText, statusColor) = when(provisioningStatus) {
+                            "SUCCESS" -> "Đã gửi thành công!" to SuccessGreen
+                            "FAILED" -> "Gửi thất bại. Thử lại?" to Color.Red
+                            "NOT_FOUND" -> "Không tìm thấy dịch vụ provisioning" to Color.Red
+                            else -> "Đang gửi..." to PrimaryBlue
+                        }
+                        Text(
+                            text = statusText,
+                            fontSize = 12.sp,
+                            color = statusColor,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally)
+                        )
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
         
         Row(

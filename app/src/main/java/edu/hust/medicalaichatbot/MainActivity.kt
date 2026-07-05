@@ -49,6 +49,10 @@ import edu.hust.medicalaichatbot.ui.viewmodel.AuthViewModel
 import edu.hust.medicalaichatbot.ui.viewmodel.ChatViewModel
 import edu.hust.medicalaichatbot.ui.viewmodel.HistoryViewModel
 import edu.hust.medicalaichatbot.ui.viewmodel.ProfileViewModel
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import edu.hust.medicalaichatbot.utils.PreferenceManager
 
 class MainActivity : ComponentActivity() {
@@ -111,6 +115,22 @@ fun MedicalApp(
     val showBars = currentRoute in listOf("home", "history", "profile", "help")
     var prefillText by remember { mutableStateOf("") }
     val currentThreadId by chatViewModel.currentThreadId.collectAsState()
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
+    LaunchedEffect(Unit) {
+        val permissions = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.add(Manifest.permission.BLUETOOTH_SCAN)
+            permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        permissionLauncher.launch(permissions.toTypedArray())
+    }
 
     // Save thread ID whenever it changes
     LaunchedEffect(currentThreadId) {

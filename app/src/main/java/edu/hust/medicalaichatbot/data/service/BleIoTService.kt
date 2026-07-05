@@ -1,0 +1,220 @@
+package edu.hust.medicalaichatbot.data.service
+
+import android.annotation.SuppressLint
+import android.bluetooth.*
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
+import android.content.Context
+import android.util.Log
+import com.espressif.provisioning.DeviceConnectionEvent
+import com.espressif.provisioning.ESPConstants
+import com.espressif.provisioning.ESPDevice
+import com.espressif.provisioning.ESPProvisionManager
+import com.espressif.provisioning.listeners.ProvisionListener
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.greenrobot.eventbus.EventBus
+import org.greenrobot.eventbus.Subscribe
+import org.greenrobot.eventbus.ThreadMode
+
+@SuppressLint("MissingPermission")
+class BleIoTService(private val context: Context) {
+    private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+    private val adapter = bluetoothManager.adapter
+    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+    
+    private var currentEspDevice: ESPDevice? = null
+
+    private val _connectionState = MutableStateFlow(BluetoothProfile.STATE_DISCONNECTED)
+    val connectionState = _connectionState.asStateFlow()
+
+    private val _discoveredAddress = MutableStateFlow<String?>(null)
+    val discoveredAddress = _discoveredAddress.asStateFlow()
+
+    private val _provisioningStatus = MutableStateFlow<String?>(null)
+    val provisioningStatus = _provisioningStatus.asStateFlow()
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    companion object {
+        private const val TAG = "BleIoTService"
+        private const val DEVICE_PREFIX = "Prov_"
+        private const val DEFAULT_POP = "12345678"
+    }
+
+    init {
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
+    }
+
+    fun startScanning() {
+        if (adapter == null || !adapter.isEnabled) {
+            Log.e(TAG, "Bluetooth adapter not available or disabled")
+            return
+        }
+
+        val scanner = adapter.bluetoothLeScanner
+        if (scanner == null) {
+            Log.e(TAG, "BluetoothLeScanner not available")
+            return
+        }
+
+        val scanCallback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                val deviceName = result.device.name ?: return
+                
+                if (deviceName.startsWith(DEVICE_PREFIX)) {
+                    val serviceUuid = result.scanRecord?.serviceUuids?.firstOrNull()?.toString()
+                    Log.i(TAG, "Found IoT device: $deviceName, UUID: $serviceUuid")
+                    
+                    // Extract MAC address from prefix or use device address
+                    val macFromPrefix = deviceName.substring(DEVICE_PREFIX.length).uppercase()
+                    val macAddress = if (macFromPrefix.matches(Regex("^[0-9A-F]{12}$"))) {
+                        macFromPrefix
+                    } else {
+                        result.device.address.replace(":", "").uppercase()
+                    }
+                    _discoveredAddress.value = macAddress
+                    
+                    scanner.stopScan(this)
+                    initiateStandardProvisioning(result.device, serviceUuid)
+                }
+            }
+            
+            override fun onScanFailed(errorCode: Int) {
+                Log.e(TAG, "Scan failed with error: $errorCode")
+            }
+        }
+        
+        Log.i(TAG, "Starting scan for IoT device...")
+        scanner.startScan(scanCallback)
+        
+        scope.launch {
+            delay(15000)
+            try {
+                scanner.stopScan(scanCallback)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun initiateStandardProvisioning(bluetoothDevice: BluetoothDevice, serviceUuid: String? = null) {
+        val provisioningManager = ESPProvisionManager.getInstance(context)
+        
+        // 1. Create ESP Device with Security 1 (AES-128-CTR + ECDH)
+        currentEspDevice = provisioningManager.createESPDevice(
+            ESPConstants.TransportType.TRANSPORT_BLE,
+            ESPConstants.SecurityType.SECURITY_1
+        )
+        
+        // 2. Set Proof of Possession (PoP)
+        currentEspDevice?.proofOfPossession = DEFAULT_POP
+        
+        _provisioningStatus.value = "CONNECTING"
+        _connectionState.value = BluetoothProfile.STATE_CONNECTING
+
+        // 3. Connect and establish secure session
+        // SDK v2.4.4 requires a non-null Service UUID to avoid NPE.
+        val uuidToUse = serviceUuid ?: "021a90aa-bb37-4316-b062-02b97c0f2095"
+        Log.i(TAG, "Connecting to device with service UUID: $uuidToUse")
+        currentEspDevice?.connectBLEDevice(bluetoothDevice, uuidToUse)
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun onDeviceConnectionEvent(event: DeviceConnectionEvent) {
+        when (event.eventType) {
+            ESPConstants.EVENT_DEVICE_CONNECTED -> {
+                Log.i(TAG, "Connected to IoT device successfully")
+                _connectionState.value = BluetoothProfile.STATE_CONNECTED
+                _provisioningStatus.value = "SECURE_SESSION_ESTABLISHED"
+            }
+            ESPConstants.EVENT_DEVICE_DISCONNECTED -> {
+                Log.i(TAG, "Disconnected from IoT device")
+                _connectionState.value = BluetoothProfile.STATE_DISCONNECTED
+                _provisioningStatus.value = null
+                currentEspDevice = null
+            }
+            ESPConstants.EVENT_DEVICE_CONNECTION_FAILED -> {
+                Log.e(TAG, "Device connection failed")
+                _connectionState.value = BluetoothProfile.STATE_DISCONNECTED
+                _provisioningStatus.value = "FAILED"
+            }
+        }
+    }
+
+    fun sendWifiCredentials(ssid: String, pass: String) {
+        val device = currentEspDevice ?: run {
+            Log.e(TAG, "Device not connected via secure session")
+            _provisioningStatus.value = "NOT_CONNECTED"
+            return
+        }
+
+        _provisioningStatus.value = "SENDING"
+        
+        // SDK automatically encrypts credentials using AES-128 before sending
+        device.provision(ssid, pass, object : ProvisionListener {
+            override fun deviceProvisioningSuccess() {
+                Log.i(TAG, "Provisioning successful - device is connecting to WiFi")
+                _provisioningStatus.value = "SUCCESS"
+                // Disconnect BLE to allow device to switch to WiFi
+                device.disconnectDevice()
+            }
+
+            override fun onProvisioningFailed(e: Exception) {
+                Log.e(TAG, "Provisioning failed: ${e.message}")
+                _provisioningStatus.value = "FAILED"
+            }
+
+            override fun wifiConfigSent() {
+                Log.i(TAG, "WiFi config sent to device")
+            }
+
+            override fun wifiConfigApplied() {
+                Log.i(TAG, "WiFi config applied on device")
+            }
+
+            override fun wifiConfigFailed(e: Exception) {
+                Log.e(TAG, "WiFi config failed: ${e.message}")
+            }
+
+            override fun wifiConfigApplyFailed(e: Exception) {
+                Log.e(TAG, "WiFi config apply failed: ${e.message}")
+            }
+
+            override fun provisioningFailedFromDevice(failureReason: ESPConstants.ProvisionFailureReason) {
+                Log.e(TAG, "Provisioning failed from device: $failureReason")
+            }
+
+            override fun createSessionFailed(e: Exception) {
+                Log.e(TAG, "Secure session creation failed: ${e.message}")
+            }
+        })
+    }
+
+    fun disconnect() {
+        currentEspDevice?.disconnectDevice()
+        currentEspDevice = null
+        _connectionState.value = BluetoothProfile.STATE_DISCONNECTED
+        
+        if (EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this)
+        }
+    }
+
+    fun getCurrentSsid(): String? {
+        val info = wifiManager.connectionInfo
+        if (info != null && info.networkId != -1) {
+            var ssid = info.ssid
+            if (ssid == "<unknown ssid>") {
+                Log.w(TAG, "SSID is obscured. Ensure Location is ON and permission is granted.")
+                return null
+            }
+            if (ssid.startsWith("\"") && ssid.endsWith("\"")) {
+                ssid = ssid.substring(1, ssid.length - 1)
+            }
+            return ssid
+        }
+        return null
+    }
+}

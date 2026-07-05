@@ -1,67 +1,116 @@
 package edu.hust.medicalaichatbot.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import android.app.Application
+import android.bluetooth.BluetoothProfile
+import android.content.Context
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.firebase.database.*
+import edu.hust.medicalaichatbot.data.service.BleIoTService
 import edu.hust.medicalaichatbot.domain.model.IoTData
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 
-class IoTViewModel : ViewModel() {
-    // Tự động lấy URL từ file google-services.json thông qua SDK Firebase
+class IoTViewModel(application: Application) : AndroidViewModel(application) {
+    private val bleService = BleIoTService(application)
+    private val _firebaseData = MutableStateFlow(IoTData())
+
+    val iotData: StateFlow<IoTData> = _firebaseData.asStateFlow()
+    val bleConnectionState = bleService.connectionState
+    val connectedDeviceAddress = bleService.discoveredAddress
+    val provisioningStatus = bleService.provisioningStatus
+
     private val database = FirebaseDatabase.getInstance()
-    
-    // ĐỊA CHỈ MAC THIẾT BỊ: Người dùng chỉ cần thay đổi giá trị này cho mạch ESP32 mới
-    private val deviceMac = "1020BA49D1C8"
+    private var deviceRef = database.getReference("devices/1020BA49D1C8/latest")
+    private var currentDeviceId = "1020BA49D1C8"
 
-    private val latestRef = database.getReference("devices/$deviceMac/latest")
+    private val _currentSsid = MutableStateFlow("")
+    val currentSsid: StateFlow<String> = _currentSsid.asStateFlow()
 
-    private val _iotData = MutableStateFlow(IoTData())
-    val iotData: StateFlow<IoTData> = _iotData.asStateFlow()
+    private val TAG = "IoTViewModel"
 
-    private val heartRateLimit = 30
-    private val history = mutableListOf<Int>()
+    private val valueEventListener = object : ValueEventListener {
+        override fun onDataChange(snapshot: DataSnapshot) {
+            val timestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
+            
+            // Only update if we have new data
+            if (timestamp == 0L || timestamp <= _firebaseData.value.timestamp) return
 
-    init {
-        latestRef.addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val hr = snapshot.child("heartRate").getValue(Int::class.java) ?: 0
-                val spo2 = snapshot.child("spo2").getValue(Int::class.java) ?: 0
-                val temp = snapshot.child("temperature").getValue(Double::class.java) ?: 0.0
-                val hum = snapshot.child("humidity").getValue(Double::class.java) ?: 0.0
-                val hasFinger = snapshot.child("hasFinger").getValue(Boolean::class.java) ?: false
-                val status = snapshot.child("status").getValue(String::class.java) ?: "IDLE"
-                
-                // CHỈ XỬ LÝ KHI NHỊP TIM > 30 (LOẠI BỎ DATA NHIỄU/CHƯA ĐO)
-                if (hr > 30 && hr < 200) {
-                    history.add(hr)
-                    if (history.size > heartRateLimit) {
-                        history.removeAt(0)
-                    }
-                }
-
-                // TỰ TÍNH TRUNG BÌNH CỘNG SẠCH
-                val cleanAvg = if (history.isNotEmpty()) history.average().toInt() else 0
-
-                _iotData.update {
-                    it.copy(
-                        heartRate = hr,
-                        heartRateAvg = cleanAvg,
-                        spo2 = spo2,
-                        temperature = temp,
-                        humidity = hum,
-                        hasFinger = hasFinger,
-                        status = status,
-                        heartRateHistory = history.toList()
-                    )
+            val heartRate = snapshot.child("heartRate").getValue(Int::class.java) ?: 0
+            val heartRateAvg = snapshot.child("heartRateAvg").getValue(Int::class.java) ?: 0
+            val spo2 = snapshot.child("spo2").getValue(Int::class.java) ?: 0
+            val temperature = snapshot.child("temperature").getValue(Double::class.java) ?: 0.0
+            val humidity = snapshot.child("humidity").getValue(Double::class.java) ?: 0.0
+            val hasFinger = snapshot.child("hasFinger").getValue(Boolean::class.java) ?: false
+            val status = snapshot.child("status").getValue(String::class.java) ?: "IDLE"
+            
+            val currentHistory = _firebaseData.value.heartRateHistory.toMutableList()
+            if (heartRate > 0) {
+                currentHistory.add(heartRate)
+                if (currentHistory.size > 20) {
+                    currentHistory.removeAt(0)
                 }
             }
 
-            override fun onCancelled(error: DatabaseError) {}
-        })
+            _firebaseData.value = IoTData(
+                heartRate = heartRate,
+                heartRateAvg = heartRateAvg,
+                spo2 = spo2,
+                temperature = temperature,
+                humidity = humidity,
+                hasFinger = hasFinger,
+                status = status,
+                timestamp = timestamp,
+                heartRateHistory = currentHistory
+            )
+            Log.d(TAG, "Data updated for $currentDeviceId: HR=$heartRate, SpO2=$spo2")
+        }
+
+        override fun onCancelled(error: DatabaseError) {
+            Log.e(TAG, "Firebase error: ${error.message}")
+        }
+    }
+
+    init {
+        Log.i(TAG, "Initializing with default device: $currentDeviceId")
+        deviceRef.addValueEventListener(valueEventListener)
+        
+        // Update current SSID from system
+        _currentSsid.value = bleService.getCurrentSsid() ?: ""
+        
+        // Listen for device discovery via BLE to update Firebase path
+        viewModelScope.launch {
+            bleService.discoveredAddress
+                .filterNotNull()
+                .distinctUntilChanged()
+                .collect { newAddress ->
+                    Log.i(TAG, "Switching Firebase path to new device: $newAddress")
+                    deviceRef.removeEventListener(valueEventListener)
+                    currentDeviceId = newAddress
+                    deviceRef = database.getReference("devices/$newAddress/latest")
+                    deviceRef.addValueEventListener(valueEventListener)
+                }
+        }
+    }
+
+    fun connectBle() {
+        bleService.startScanning()
+        // Refresh SSID when connecting
+        _currentSsid.value = bleService.getCurrentSsid() ?: ""
+    }
+
+    fun disconnectBle() {
+        bleService.disconnect()
+    }
+
+    fun sendWifiCredentials(ssid: String, pass: String) {
+        bleService.sendWifiCredentials(ssid, pass)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        deviceRef.removeEventListener(valueEventListener)
+        bleService.disconnect()
     }
 }
