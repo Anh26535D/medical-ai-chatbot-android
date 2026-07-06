@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.util.Log
 import com.espressif.provisioning.DeviceConnectionEvent
@@ -25,6 +26,8 @@ class BleIoTService(private val context: Context) {
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
     
     private var currentEspDevice: ESPDevice? = null
+    private var scanCallback: ScanCallback? = null
+    private var isScanning = false
 
     private val _connectionState = MutableStateFlow(BluetoothProfile.STATE_DISCONNECTED)
     val connectionState = _connectionState.asStateFlow()
@@ -55,17 +58,27 @@ class BleIoTService(private val context: Context) {
             return
         }
 
+        if (isScanning) {
+            Log.w(TAG, "Already scanning, ignoring request")
+            return
+        }
+
         val scanner = adapter.bluetoothLeScanner
         if (scanner == null) {
             Log.e(TAG, "BluetoothLeScanner not available")
             return
         }
 
-        val scanCallback = object : ScanCallback() {
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val deviceName = result.device.name ?: return
+                val deviceName = result.device.name
+                Log.d(TAG, "Scanned device: $deviceName [${result.device.address}]")
                 
-                if (deviceName.startsWith(DEVICE_PREFIX)) {
+                if (deviceName != null && deviceName.startsWith(DEVICE_PREFIX)) {
                     val serviceUuid = result.scanRecord?.serviceUuids?.firstOrNull()?.toString()
                     Log.i(TAG, "Found IoT device: $deviceName, UUID: $serviceUuid")
                     
@@ -90,24 +103,41 @@ class BleIoTService(private val context: Context) {
 
                     _discoveredAddress.value = macAddress
                     
-                    scanner.stopScan(this)
+                    stopScanning()
                     initiateStandardProvisioning(result.device, serviceUuid)
                 }
             }
             
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "Scan failed with error: $errorCode")
+                isScanning = false
             }
         }
         
         Log.i(TAG, "Starting scan for IoT device...")
-        scanner.startScan(scanCallback)
+        isScanning = true
+        scanner.startScan(null, settings, scanCallback)
         
         scope.launch {
-            delay(15000)
-            try {
-                scanner.stopScan(scanCallback)
-            } catch (_: Exception) {}
+            delay(30000) // 30s timeout
+            if (isScanning) {
+                Log.i(TAG, "Scan timeout reached")
+                stopScanning()
+            }
+        }
+    }
+
+    fun stopScanning() {
+        if (!isScanning) return
+        
+        try {
+            adapter?.bluetoothLeScanner?.stopScan(scanCallback)
+            Log.i(TAG, "Scan stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping scan: ${e.message}")
+        } finally {
+            isScanning = false
+            scanCallback = null
         }
     }
 
@@ -127,8 +157,6 @@ class BleIoTService(private val context: Context) {
         _connectionState.value = BluetoothProfile.STATE_CONNECTING
 
         // 3. Connect and establish secure session
-        // SDK v2.4.4 requires a non-null Service UUID to avoid NPE.
-        // The UUID must be in the standard 8-4-4-4-12 string format.
         val uuidToUse = if (serviceUuid != null && serviceUuid.length >= 32) {
             serviceUuid
         } else {
@@ -175,12 +203,10 @@ class BleIoTService(private val context: Context) {
 
         _provisioningStatus.value = "SENDING"
         
-        // SDK automatically encrypts credentials using AES-128 before sending
         device.provision(ssid, pass, object : ProvisionListener {
             override fun deviceProvisioningSuccess() {
                 Log.i(TAG, "Provisioning successful - device is connecting to WiFi")
                 _provisioningStatus.value = "SUCCESS"
-                // Disconnect BLE to allow device to switch to WiFi
                 device.disconnectDevice()
             }
 
