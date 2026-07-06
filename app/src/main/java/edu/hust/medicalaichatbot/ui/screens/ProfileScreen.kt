@@ -29,6 +29,8 @@ import edu.hust.medicalaichatbot.ui.viewmodel.ProfileViewModel
 import edu.hust.medicalaichatbot.ui.viewmodel.AuthViewModel
 import edu.hust.medicalaichatbot.ui.viewmodel.AuthState
 import edu.hust.medicalaichatbot.ui.viewmodel.IoTViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -144,7 +146,24 @@ fun ProfileScreen(
                 }
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Testing Button for Firebase
+            OutlinedButton(
+                onClick = { iotViewModel.refreshFirebaseData() },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.5f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Kiểm tra kết nối Firebase (Test)", fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // IoT Monitoring Section
             IoTMonitoringSection(iotData, iotViewModel)
@@ -179,9 +198,11 @@ fun ProfileScreen(
 @Composable
 fun IoTMonitoringSection(data: IoTData, viewModel: IoTViewModel) {
     val connectionState by viewModel.bleConnectionState.collectAsState()
+    val currentDeviceId by viewModel.currentDeviceId.collectAsState()
     val deviceAddress by viewModel.connectedDeviceAddress.collectAsState()
     val provisioningStatus by viewModel.provisioningStatus.collectAsState()
     val suggestedSsid by viewModel.currentSsid.collectAsState()
+    val historyData by viewModel.historyData.collectAsState()
     
     var wifiSsid by remember(suggestedSsid) { mutableStateOf(suggestedSsid) }
     var wifiPass by remember { mutableStateOf("") }
@@ -195,7 +216,7 @@ fun IoTMonitoringSection(data: IoTData, viewModel: IoTViewModel) {
         ) {
             Column {
                 Text(
-                    text = "THIẾT BỊ ĐEO (${deviceAddress ?: "1020BA49D1C8"})",
+                    text = "THIẾT BỊ ĐEO ($currentDeviceId)",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextGray
@@ -204,7 +225,7 @@ fun IoTMonitoringSection(data: IoTData, viewModel: IoTViewModel) {
                     text = when(connectionState) {
                         android.bluetooth.BluetoothProfile.STATE_CONNECTED -> "Đã kết nối BLE"
                         android.bluetooth.BluetoothProfile.STATE_CONNECTING -> "Đang kết nối..."
-                        else -> if (deviceAddress != null) "Đã nhận diện (Cloud)" else "Dữ liệu mặc định (Cloud)"
+                        else -> if (currentDeviceId != "1020BA49D1C8" || deviceAddress != null) "Đã nhận diện (Cloud)" else "Dữ liệu mặc định (Cloud)"
                     },
                     fontSize = 10.sp,
                     color = if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) SuccessGreen else TextGray
@@ -411,6 +432,120 @@ fun IoTMonitoringSection(data: IoTData, viewModel: IoTViewModel) {
                     value = String.format(Locale.US, "%.0f%%", data.humidity),
                     color = Color(0xFF29B6F6)
                 )
+            }
+        }
+
+        if (historyData.isNotEmpty()) {
+            IoTHistorySection(historyData)
+        }
+    }
+}
+
+@Composable
+fun IoTHistorySection(history: List<IoTData>) {
+    Column(modifier = Modifier.padding(top = 24.dp)) {
+        Text(
+            text = "LỊCH SỬ ĐO GẦN ĐÂY",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextGray,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+        
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White,
+            shadowElevation = 2.dp
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Show top 5 recent records
+                history.take(5).forEachIndexed { index, record ->
+                    HistoryItem(record)
+                    if (index < history.take(5).size - 1) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = SurfaceGray.copy(alpha = 0.5f),
+                            thickness = 0.5.dp
+                        )
+                    }
+                }
+                
+                if (history.size > 5) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Xem tất cả ${history.size} bản ghi",
+                        color = PrimaryBlue,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .clickable { /* Future implementation: Navigate to full history screen */ }
+                            .padding(8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HistoryItem(data: IoTData) {
+    val sdf = remember { SimpleDateFormat("HH:mm - dd/MM/yyyy", Locale.getDefault()) }
+    val dateStr = sdf.format(Date(data.timestamp))
+    
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = dateStr, 
+                fontSize = 14.sp, 
+                fontWeight = FontWeight.Bold, 
+                color = Color.Black
+            )
+            Text(
+                text = if (data.status == "COMPLETED") "Đo thành công" else "Dữ liệu tức thời", 
+                fontSize = 12.sp, 
+                color = TextGray
+            )
+        }
+        
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(horizontalAlignment = Alignment.End) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Favorite, 
+                        contentDescription = null, 
+                        tint = Color.Red, 
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${data.heartRate}", 
+                        fontSize = 16.sp, 
+                        fontWeight = FontWeight.Black,
+                        color = Color.Black
+                    )
+                    Text(text = " bpm", fontSize = 11.sp, color = TextGray)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Opacity, 
+                        contentDescription = null, 
+                        tint = Color(0xFF2196F3), 
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${data.spo2}%", 
+                        fontSize = 13.sp, 
+                        fontWeight = FontWeight.Bold,
+                        color = Color.DarkGray
+                    )
+                }
             }
         }
     }
