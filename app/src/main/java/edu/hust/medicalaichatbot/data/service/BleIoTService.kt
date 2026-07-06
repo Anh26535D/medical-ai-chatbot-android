@@ -128,9 +128,20 @@ class BleIoTService(private val context: Context) {
 
         // 3. Connect and establish secure session
         // SDK v2.4.4 requires a non-null Service UUID to avoid NPE.
-        val uuidToUse = serviceUuid ?: "021a90aa-bb37-4316-b062-02b97c0f2095"
+        // The UUID must be in the standard 8-4-4-4-12 string format.
+        val uuidToUse = if (serviceUuid != null && serviceUuid.length >= 32) {
+            serviceUuid
+        } else {
+            "021a90aa-bb37-4316-b062-02b97c0f2095"
+        }
         Log.i(TAG, "Connecting to device with service UUID: $uuidToUse")
-        currentEspDevice?.connectBLEDevice(bluetoothDevice, uuidToUse)
+        
+        try {
+            currentEspDevice?.connectBLEDevice(bluetoothDevice, uuidToUse)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to connect BLE device: ${e.message}")
+            _provisioningStatus.value = "FAILED"
+        }
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
