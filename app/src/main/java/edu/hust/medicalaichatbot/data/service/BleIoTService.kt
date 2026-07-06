@@ -69,13 +69,25 @@ class BleIoTService(private val context: Context) {
                     val serviceUuid = result.scanRecord?.serviceUuids?.firstOrNull()?.toString()
                     Log.i(TAG, "Found IoT device: $deviceName, UUID: $serviceUuid")
                     
-                    // Extract MAC address from prefix or use device address
-                    val macFromPrefix = deviceName.substring(DEVICE_PREFIX.length).uppercase()
-                    val macAddress = if (macFromPrefix.matches(Regex("^[0-9A-F]{12}$"))) {
-                        macFromPrefix
-                    } else {
-                        result.device.address.replace(":", "").uppercase()
+                    // 1. Get BLE MAC and derive WiFi MAC (ESP32: BLE MAC = WiFi MAC + 2)
+                    val bleMac = result.device.address.replace(":", "").uppercase()
+                    val derivedWifiMac = try {
+                        val bleLong = bleMac.toLong(16)
+                        String.format("%012X", bleLong - 2)
+                    } catch (e: Exception) {
+                        bleMac
                     }
+
+                    // 2. Extract MAC from device name if present
+                    val rawNameMac = deviceName.substring(DEVICE_PREFIX.length).uppercase().replace(":", "")
+                    
+                    // 3. Use name MAC if it's a full 12-char hex, otherwise use derived WiFi MAC
+                    val macAddress = if (rawNameMac.length == 12 && rawNameMac.matches(Regex("^[0-9A-F]+$"))) {
+                        rawNameMac
+                    } else {
+                        derivedWifiMac
+                    }
+
                     _discoveredAddress.value = macAddress
                     
                     scanner.stopScan(this)
