@@ -58,7 +58,7 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
                     val sessId = if (parts.size > 1) parts.subList(1, parts.size).joinToString("_") else "session_xyz"
                     _discoveredUserCode.value = userCode
                     _activeSessionId.value = sessId
-                    Log.i(TAG, "Discovered pairing code from Firebase: $userCode for session: $sessId")
+                    Log.i("IoT_Pairing_Flow", "Firebase Sync: Discovered user_code=$userCode for session=$sessId")
                 }
             }
         }
@@ -217,36 +217,49 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
 
     fun confirmDevice(userCode: String, macAddress: String, sessionId: String, userPhone: String, userPass: String) {
         viewModelScope.launch {
+            Log.i("IoT_Pairing_Flow", "User clicked Confirm Pairing. UserCode=$userCode, MAC=$macAddress, Session=$sessionId")
             _confirmStatus.value = "CONFIRMING"
+            
             // Step 1: Login / Register on Backend Go
+            Log.i("IoT_Pairing_Flow", "Step 1: Authenticating user with Backend Go... Phone=$userPhone")
             var loginResult = BackendHttpClient.login(userPhone, userPass)
             if (loginResult.isFailure) {
+                Log.w("IoT_Pairing_Flow", "Login failed. Trying to register user first...")
                 val regResult = BackendHttpClient.register(userPhone, userPass)
                 if (regResult.isSuccess) {
+                    Log.i("IoT_Pairing_Flow", "User registration on Backend Go successful. Retrying login...")
                     loginResult = BackendHttpClient.login(userPhone, userPass)
                 }
             }
 
             if (loginResult.isFailure) {
+                Log.e("IoT_Pairing_Flow", "Authentication failed on backend: ${loginResult.exceptionOrNull()?.message}")
                 _confirmStatus.value = "AUTH_FAILED"
                 return@launch
             }
 
             val jwt = loginResult.getOrNull() ?: ""
+            Log.i("IoT_Pairing_Flow", "Authentication successful. Obtained JWT Token: ${jwt.substring(0, 15)}...")
 
             // Step 2: Compute PIN PoP HMAC-SHA256 Signature
+            Log.i("IoT_Pairing_Flow", "Step 2: Computing HMAC-SHA256 signature using PIN PoP (12345678)")
             val message = "$userCode:$macAddress:$sessionId"
             val signature = computeHmacSha256(message, "12345678")
+            Log.i("IoT_Pairing_Flow", "Computed PIN PoP signature: $signature")
 
             // Step 3: Call Confirm Device API
+            Log.i("IoT_Pairing_Flow", "Step 3: Sending confirmation request to Backend Go...")
             val confirmResult = BackendHttpClient.confirmDevice(userCode, macAddress, sessionId, signature, jwt)
             if (confirmResult.isSuccess) {
+                Log.i("IoT_Pairing_Flow", "Ghép đôi thành công! Device pairing approved by backend.")
                 _confirmStatus.value = "SUCCESS"
                 database.getReference("provisioning_polling/${macAddress}_${sessionId}").removeValue()
                 _discoveredUserCode.value = null
                 _activeSessionId.value = null
             } else {
-                _confirmStatus.value = "FAILED: ${confirmResult.exceptionOrNull()?.message}"
+                val errMsg = confirmResult.exceptionOrNull()?.message
+                Log.e("IoT_Pairing_Flow", "Pairing confirmation failed on backend: $errMsg")
+                _confirmStatus.value = "FAILED: $errMsg"
             }
         }
     }
