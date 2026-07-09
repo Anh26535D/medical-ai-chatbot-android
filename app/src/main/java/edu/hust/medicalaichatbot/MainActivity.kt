@@ -161,10 +161,13 @@ fun MedicalApp(
                     "history" -> stringResource(R.string.history_title)
                     "profile" -> "Hồ sơ sức khỏe"
                     "help" -> "Trung tâm hỗ trợ"
+                    "home" -> null
                     else -> null
                 }
+                val subtitle = if (currentRoute == "profile") "Trợ lý sức khỏe AI" else null
                 CommonTopBar(
                     title = title,
+                    subtitle = subtitle,
                     onProfileClick = { navController.navigate("account_settings") }
                 )
             }

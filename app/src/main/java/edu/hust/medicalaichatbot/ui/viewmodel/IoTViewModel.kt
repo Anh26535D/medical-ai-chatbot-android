@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.*
 import edu.hust.medicalaichatbot.data.service.BleIoTService
+import edu.hust.medicalaichatbot.data.service.BackendHttpClient
 import edu.hust.medicalaichatbot.domain.model.IoTData
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -35,6 +36,38 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _currentSsid = MutableStateFlow("")
     val currentSsid: StateFlow<String> = _currentSsid.asStateFlow()
+
+    // OAUTH RFC 8628 States
+    private val _discoveredUserCode = MutableStateFlow<String?>(null)
+    val discoveredUserCode: StateFlow<String?> = _discoveredUserCode.asStateFlow()
+
+    private val _activeSessionId = MutableStateFlow<String?>(null)
+    val activeSessionId: StateFlow<String?> = _activeSessionId.asStateFlow()
+
+    private val _confirmStatus = MutableStateFlow<String?>(null)
+    val confirmStatus: StateFlow<String?> = _confirmStatus.asStateFlow()
+
+    private var pollingQuery: Query? = null
+    private val pollingListener = object : ValueEventListener {
+        override fun onDataChange(snapshot: DataSnapshot) {
+            for (child in snapshot.children) {
+                val key = child.key ?: continue
+                val userCode = child.child("user_code").getValue(String::class.java)
+                if (userCode != null) {
+                    val parts = key.split("_")
+                    val sessId = if (parts.size > 1) parts.subList(1, parts.size).joinToString("_") else "session_xyz"
+                    _discoveredUserCode.value = userCode
+                    _activeSessionId.value = sessId
+                    Log.i(TAG, "Discovered pairing code from Firebase: $userCode for session: $sessId")
+                }
+            }
+        }
+        override fun onCancelled(error: DatabaseError) {
+            Log.e(TAG, "Polling listener error: ${error.message}")
+        }
+    }
+
+    private var isGuest = true
 
     private val TAG = "IoTViewModel"
 
@@ -96,8 +129,10 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun setupFirebaseListeners() {
+        if (isGuest) return
         activeDeviceRef?.removeEventListener(valueEventListener)
         activeHistoryQuery?.removeEventListener(historyEventListener)
+        pollingQuery?.removeEventListener(pollingListener)
 
         val deviceId = _currentDeviceId.value
         val newDeviceRef = database.getReference("devices/$deviceId/latest")
@@ -109,6 +144,13 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
 
         activeDeviceRef = newDeviceRef
         activeHistoryQuery = newHistoryQuery
+
+        val newPollingQuery = database.getReference("provisioning_polling")
+            .orderByKey()
+            .startAt(deviceId)
+            .endAt(deviceId + "\uf8ff")
+        newPollingQuery.addValueEventListener(pollingListener)
+        pollingQuery = newPollingQuery
         
         Log.i(TAG, "Auto-sync active for path: devices/$deviceId")
     }
@@ -127,18 +169,101 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    fun connectBle() = bleService.startScanning()
+    fun connectBle() {
+        if (isGuest) {
+            Log.w(TAG, "Blocking connectBle for guest user")
+            return
+        }
+        bleService.startScanning()
+    }
+
     fun disconnectBle() = bleService.disconnect()
-    fun sendWifiCredentials(s: String, p: String) = bleService.sendWifiCredentials(s, p)
+
+    fun sendWifiCredentials(s: String, p: String) {
+        if (isGuest) {
+            Log.w(TAG, "Blocking sendWifiCredentials for guest user")
+            return
+        }
+        bleService.sendWifiCredentials(s, p)
+    }
+
+    fun setGuestStatus(guest: Boolean) {
+        if (this.isGuest == guest) return
+        
+        this.isGuest = guest
+        if (guest) {
+            Log.i(TAG, "Guest mode active: Clearing IoT listeners and data")
+            activeDeviceRef?.removeEventListener(valueEventListener)
+            activeHistoryQuery?.removeEventListener(historyEventListener)
+            pollingQuery?.removeEventListener(pollingListener)
+            activeDeviceRef = null
+            activeHistoryQuery = null
+            pollingQuery = null
+            _firebaseData.value = IoTData()
+            _historyData.value = emptyList()
+            _discoveredUserCode.value = null
+            _activeSessionId.value = null
+            bleService.disconnect()
+        } else {
+            Log.i(TAG, "User authenticated: Initializing IoT sync")
+            setupFirebaseListeners()
+        }
+    }
 
     fun refreshFirebaseData() {
+        if (isGuest) return
         activeDeviceRef?.addListenerForSingleValueEvent(valueEventListener)
+    }
+
+    fun confirmDevice(userCode: String, macAddress: String, sessionId: String, userPhone: String, userPass: String) {
+        viewModelScope.launch {
+            _confirmStatus.value = "CONFIRMING"
+            // Step 1: Login / Register on Backend Go
+            var loginResult = BackendHttpClient.login(userPhone, userPass)
+            if (loginResult.isFailure) {
+                val regResult = BackendHttpClient.register(userPhone, userPass)
+                if (regResult.isSuccess) {
+                    loginResult = BackendHttpClient.login(userPhone, userPass)
+                }
+            }
+
+            if (loginResult.isFailure) {
+                _confirmStatus.value = "AUTH_FAILED"
+                return@launch
+            }
+
+            val jwt = loginResult.getOrNull() ?: ""
+
+            // Step 2: Compute PIN PoP HMAC-SHA256 Signature
+            val message = "$userCode:$macAddress:$sessionId"
+            val signature = computeHmacSha256(message, "12345678")
+
+            // Step 3: Call Confirm Device API
+            val confirmResult = BackendHttpClient.confirmDevice(userCode, macAddress, sessionId, signature, jwt)
+            if (confirmResult.isSuccess) {
+                _confirmStatus.value = "SUCCESS"
+                database.getReference("provisioning_polling/${macAddress}_${sessionId}").removeValue()
+                _discoveredUserCode.value = null
+                _activeSessionId.value = null
+            } else {
+                _confirmStatus.value = "FAILED: ${confirmResult.exceptionOrNull()?.message}"
+            }
+        }
+    }
+
+    private fun computeHmacSha256(message: String, key: String): String {
+        val sha256HMAC = javax.crypto.Mac.getInstance("HmacSHA256")
+        val secretKey = javax.crypto.spec.SecretKeySpec(key.toByteArray(Charsets.US_ASCII), "HmacSHA256")
+        sha256HMAC.init(secretKey)
+        val hash = sha256HMAC.doFinal(message.toByteArray(Charsets.US_ASCII))
+        return hash.joinToString("") { String.format("%02x", it) }
     }
 
     override fun onCleared() {
         super.onCleared()
         activeDeviceRef?.removeEventListener(valueEventListener)
         activeHistoryQuery?.removeEventListener(historyEventListener)
+        pollingQuery?.removeEventListener(pollingListener)
         bleService.disconnect()
     }
 }

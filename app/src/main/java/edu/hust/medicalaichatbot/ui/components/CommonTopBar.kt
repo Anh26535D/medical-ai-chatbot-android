@@ -34,6 +34,7 @@ import edu.hust.medicalaichatbot.ui.theme.TextGray
 
 @Composable
 fun CommonTopBar(
+    modifier: Modifier = Modifier,
     title: String? = null,
     subtitle: String? = null,
     onProfileClick: () -> Unit
@@ -44,7 +45,7 @@ fun CommonTopBar(
         modifier = Modifier.statusBarsPadding()
     ) {
         Row(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,

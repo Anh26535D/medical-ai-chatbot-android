@@ -41,10 +41,50 @@ fun ProfileScreen(
     onLoginClick: () -> Unit = {}
 ) {
     val userProfiles by profileViewModel.userProfiles.collectAsState()
-    val authState by authViewModel.authState.collectAsState()
+    val currentUser by authViewModel.currentUser.collectAsState()
     val iotData by iotViewModel.iotData.collectAsState()
-    val isGuest = authState is AuthState.Guest
+    val isGuest = currentUser == null
     
+    LaunchedEffect(isGuest) {
+        iotViewModel.setGuestStatus(isGuest)
+    }
+    
+    if (isGuest) {
+        ProfileGuestScreen(onLoginClick = onLoginClick)
+    } else {
+        AuthenticatedProfileScreen(
+            userProfiles = userProfiles,
+            iotData = iotData,
+            profileViewModel = profileViewModel,
+            iotViewModel = iotViewModel,
+            currentUser = currentUser,
+            onLoginClick = onLoginClick
+        )
+    }
+}
+
+@Composable
+fun ProfileGuestScreen(onLoginClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundGray)
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        ProfileGuestPlaceholder(onLoginClick = onLoginClick)
+    }
+}
+
+@Composable
+fun AuthenticatedProfileScreen(
+    userProfiles: List<UserProfile>,
+    iotData: IoTData,
+    profileViewModel: ProfileViewModel,
+    iotViewModel: IoTViewModel,
+    currentUser: edu.hust.medicalaichatbot.data.local.entity.User?,
+    onLoginClick: () -> Unit
+) {
     var editingProfileId by remember { mutableStateOf<Int?>(null) }
     var isAddingNew by remember { mutableStateOf(false) }
 
@@ -55,148 +95,134 @@ fun ProfileScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Text(
-            text = "Hồ sơ sức khỏe",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black
-        )
-        Text(
-            text = "Quản lý và cập nhật thông tin y tế gia đình.",
-            fontSize = 14.sp,
-            color = TextGray,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-        
         Spacer(modifier = Modifier.height(24.dp))
-        
-        if (isGuest) {
-            ProfileGuestPlaceholder(onLoginClick = onLoginClick)
-        } else {
-            Text(
-                text = "DANH SÁCH HỒ SƠ",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextGray
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            userProfiles.forEach { profile ->
-                val isEditing = editingProfileId == profile.id || (profile.isInitial && profile.isPrimary && !isAddingNew)
-                
-                if (isEditing) {
-                    EditProfileCard(
-                        profile = profile,
-                        isPrimary = profile.isPrimary,
-                        onSave = { name, birthYear, gender, conditions ->
-                            profileViewModel.updateProfile(profile.id, name, birthYear, gender, conditions)
-                            editingProfileId = null
-                        },
-                        onCancel = { editingProfileId = null }
-                    )
-                } else {
-                    MainProfileCard(
-                        profile = profile,
-                        isPrimary = profile.isPrimary,
-                        onEditClick = { editingProfileId = profile.id },
-                        onUpdateConditions = { newConditions ->
-                            profileViewModel.updateProfile(
-                                profile.id,
-                                profile.name, 
-                                profile.birthYear, 
-                                profile.gender, 
-                                newConditions
-                            )
-                        }
-                    )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
 
-            if (isAddingNew) {
+        Text(
+            text = "DANH SÁCH HỒ SƠ",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextGray
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        userProfiles.forEach { profile ->
+            val isEditing = editingProfileId == profile.id || (profile.isInitial && profile.isPrimary && !isAddingNew)
+
+            if (isEditing) {
                 EditProfileCard(
-                    profile = UserProfile(name = "", isInitial = false),
+                    profile = profile,
+                    isPrimary = profile.isPrimary,
                     onSave = { name, birthYear, gender, conditions ->
-                        profileViewModel.addProfile(name, birthYear, gender, conditions)
-                        isAddingNew = false
+                        profileViewModel.updateProfile(profile.id, name, birthYear, gender, conditions)
+                        editingProfileId = null
                     },
-                    onCancel = { isAddingNew = false }
+                    onCancel = { editingProfileId = null }
                 )
-                Spacer(modifier = Modifier.height(12.dp))
             } else {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .clickable { isAddingNew = true },
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFF0F7FF),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.3f))
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.PersonAdd, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Thêm hồ sơ mới", color = PrimaryBlue, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Testing Button for Firebase
-            OutlinedButton(
-                onClick = { iotViewModel.refreshFirebaseData() },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.5f)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Kiểm tra kết nối Firebase (Test)", fontWeight = FontWeight.SemiBold)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // IoT Monitoring Section
-            IoTMonitoringSection(iotData, iotViewModel)
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Info card
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = PrimaryBlue.copy(alpha = 0.1f)
-            ) {
-                Row(modifier = Modifier.padding(16.dp)) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(text = "Quản lý gia đình", fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Bạn có thể thêm hồ sơ cho con cái hoặc người thân lớn tuổi để nhận được tư vấn sức khỏe phù hợp hơn cho cả nhà.",
-                            fontSize = 13.sp,
-                            color = Color.DarkGray,
-                            lineHeight = 18.sp
+                MainProfileCard(
+                    profile = profile,
+                    isPrimary = profile.isPrimary,
+                    onEditClick = { editingProfileId = profile.id },
+                    onUpdateConditions = { newConditions ->
+                        profileViewModel.updateProfile(
+                            profile.id,
+                            profile.name,
+                            profile.birthYear,
+                            profile.gender,
+                            newConditions
                         )
                     }
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        if (isAddingNew) {
+            EditProfileCard(
+                profile = UserProfile(name = "", isInitial = false),
+                onSave = { name, birthYear, gender, conditions ->
+                    profileViewModel.addProfile(name, birthYear, gender, conditions)
+                    isAddingNew = false
+                },
+                onCancel = { isAddingNew = false }
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        } else {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clickable { isAddingNew = true },
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFF0F7FF),
+                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.3f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Thêm hồ sơ mới", color = PrimaryBlue, fontWeight = FontWeight.Bold)
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = { iotViewModel.refreshFirebaseData() },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.5f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Kiểm tra kết nối Firebase (Test)", fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        IoTMonitoringSection(iotData, iotViewModel, currentUser = currentUser)
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = PrimaryBlue.copy(alpha = 0.1f)
+        ) {
+            Row(modifier = Modifier.padding(16.dp)) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(text = "Quản lý gia đình", fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Bạn có thể thêm hồ sơ cho con cái hoặc người thân lớn tuổi để nhận được tư vấn sức khỏe phù hợp hơn cho cả nhà.",
+                        fontSize = 13.sp,
+                        color = Color.DarkGray,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
 @Composable
-fun IoTMonitoringSection(data: IoTData, viewModel: IoTViewModel) {
+fun IoTMonitoringSection(
+    data: IoTData, 
+    viewModel: IoTViewModel,
+    currentUser: edu.hust.medicalaichatbot.data.local.entity.User?
+) {
     val connectionState by viewModel.bleConnectionState.collectAsState()
     val currentDeviceId by viewModel.currentDeviceId.collectAsState()
     val deviceAddress by viewModel.connectedDeviceAddress.collectAsState()
@@ -204,11 +230,86 @@ fun IoTMonitoringSection(data: IoTData, viewModel: IoTViewModel) {
     val suggestedSsid by viewModel.currentSsid.collectAsState()
     val historyData by viewModel.historyData.collectAsState()
     
+    val discoveredUserCode by viewModel.discoveredUserCode.collectAsState()
+    val activeSessionId by viewModel.activeSessionId.collectAsState()
+    val confirmStatus by viewModel.confirmStatus.collectAsState()
+    
     var wifiSsid by remember(suggestedSsid) { mutableStateOf(suggestedSsid) }
     var wifiPass by remember { mutableStateOf("") }
     var showWifiConfig by remember { mutableStateOf(false) }
 
     Column {
+        // Pairing Confirmation Card (RFC 8628 Flow)
+        if (discoveredUserCode != null && activeSessionId != null && currentUser != null) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFFFFF9C4),
+                shadowElevation = 4.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBC02D))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFFF57F17), modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(text = "YÊU CẦU GHÉP ĐÔI THIẾT BỊ", fontWeight = FontWeight.Bold, color = Color(0xFFE65100), fontSize = 14.sp)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Thiết bị đeo (${deviceAddress ?: currentDeviceId}) đang yêu cầu xác nhận kết nối tới tài khoản của bạn.",
+                        fontSize = 12.sp,
+                        color = Color.DarkGray
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "Mã xác nhận: ", fontSize = 14.sp, color = Color.Black)
+                        Text(text = discoveredUserCode!!, fontSize = 22.sp, fontWeight = FontWeight.Black, color = PrimaryBlue)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            viewModel.confirmDevice(
+                                userCode = discoveredUserCode!!,
+                                macAddress = deviceAddress ?: currentDeviceId,
+                                sessionId = activeSessionId!!,
+                                userPhone = currentUser.phoneNumber,
+                                userPass = currentUser.password
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                        enabled = confirmStatus != "CONFIRMING"
+                    ) {
+                        if (confirmStatus == "CONFIRMING") {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("Chấp nhận kết nối")
+                        }
+                    }
+                    
+                    if (confirmStatus != null && confirmStatus != "CONFIRMING") {
+                        val (statusText, statusColor) = when {
+                            confirmStatus == "SUCCESS" -> "Ghép đôi thành công!" to SuccessGreen
+                            confirmStatus!!.startsWith("FAILED") -> "Thất bại: ${confirmStatus}" to Color.Red
+                            else -> "Lỗi xác thực" to Color.Red
+                        }
+                        Text(
+                            text = statusText,
+                            fontSize = 12.sp,
+                            color = statusColor,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally)
+                        )
+                    }
+                }
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -260,11 +361,10 @@ fun IoTMonitoringSection(data: IoTData, viewModel: IoTViewModel) {
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                StatusBadge(status = data.status, hasFinger = data.hasFinger)
+                IoTStatusBadge(status = data.status, hasFinger = data.hasFinger)
             }
         }
         
-        // WiFi Configuration Panel
         if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED && showWifiConfig) {
             Spacer(modifier = Modifier.height(12.dp))
             Surface(
@@ -459,7 +559,6 @@ fun IoTHistorySection(history: List<IoTData>) {
             shadowElevation = 2.dp
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                // Show top 5 recent records
                 history.take(5).forEachIndexed { index, record ->
                     HistoryItem(record)
                     if (index < history.take(5).size - 1) {
@@ -480,7 +579,7 @@ fun IoTHistorySection(history: List<IoTData>) {
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .align(Alignment.CenterHorizontally)
-                            .clickable { /* Future implementation: Navigate to full history screen */ }
+                            .clickable { }
                             .padding(8.dp)
                     )
                 }
@@ -552,7 +651,7 @@ fun HistoryItem(data: IoTData) {
 }
 
 @Composable
-fun StatusBadge(status: String, hasFinger: Boolean) {
+fun IoTStatusBadge(status: String, hasFinger: Boolean) {
     val (text, color) = when {
         !hasFinger && status != "IDLE" -> "KHÔNG CHẠM" to Color.Gray
         status == "MEASURING" -> "ĐANG ĐO" to PrimaryBlue
@@ -718,8 +817,8 @@ fun MainProfileCard(
             }
             Spacer(modifier = Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                InfoBox(label = "Năm sinh", value = profile.birthYear, subValue = "(${profile.age} tuổi)", modifier = Modifier.weight(1f))
-                InfoBox(label = "Giới tính", value = profile.gender, modifier = Modifier.weight(1f))
+                InfoBox(modifier = Modifier.weight(1f), label = "Năm sinh", value = profile.birthYear, subValue = "(${profile.age} tuổi)")
+                InfoBox(modifier = Modifier.weight(1f), label = "Giới tính", value = profile.gender)
             }
             Spacer(modifier = Modifier.height(16.dp))
             Surface(modifier = Modifier.fillMaxWidth(), color = SurfaceGray.copy(alpha = 0.3f), shape = RoundedCornerShape(12.dp)) {
@@ -752,7 +851,7 @@ fun MainProfileCard(
 }
 
 @Composable
-fun InfoBox(label: String, value: String, subValue: String? = null, modifier: Modifier = Modifier) {
+fun InfoBox(modifier: Modifier = Modifier, label: String, value: String, subValue: String? = null) {
     Surface(modifier = modifier, shape = RoundedCornerShape(24.dp), color = Color(0xFFF5F7FA)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = label, fontSize = 12.sp, color = TextGray)
@@ -776,11 +875,17 @@ fun DiseaseTag(text: String) {
 
 @Composable
 fun ProfileGuestPlaceholder(onLoginClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(80.dp), tint = TextGray.copy(alpha = 0.3f))
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "Đăng nhập để quản lý hồ sơ", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text(text = "Lưu trữ thông tin y tế để nhận tư vấn chính xác hơn.", fontSize = 14.sp, color = TextGray, modifier = Modifier.padding(vertical = 8.dp))
+        Text(
+            text = "Lưu trữ thông tin y tế và theo dõi dữ liệu sức khỏe từ thiết bị đeo để nhận tư vấn chính xác hơn.", 
+            fontSize = 14.sp, 
+            color = TextGray, 
+            modifier = Modifier.padding(vertical = 8.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
         Button(onClick = onLoginClick, modifier = Modifier.padding(top = 16.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)) { Text("Đăng nhập ngay") }
     }
 }
