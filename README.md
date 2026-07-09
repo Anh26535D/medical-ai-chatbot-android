@@ -2,98 +2,130 @@
 
 A modern Android application providing AI-powered medical consultation and health companionship.
 
-## Hướng dẫn trải nghiệm (User Trial Guide)
+---
 
-Để trải nghiệm đầy đủ các tính năng của **Sức Khỏe Việt AI**, người dùng có thể thực hiện theo các bước sau:
+## 🚀 User Trial Guide
 
-1.  **Khởi đầu**: Xem qua các màn hình Giới thiệu (Onboarding) để nắm bắt giá trị cốt lõi của ứng dụng.
-2.  **Đăng ký/Đăng nhập**: Tạo tài khoản cá nhân (dữ liệu được lưu cục bộ bảo mật).
-3.  **Tư vấn AI**:
-    *   Tại màn hình chính, chọn các **Câu hỏi gợi ý** (ví dụ: "Tôi bị đau đầu và sốt") hoặc nhập triệu chứng trực tiếp.
-    *   Sử dụng các nút **Trả lời nhanh** (Quick Replies) ở phía trên thanh nhập liệu để tương tác nhanh với AI.
-4.  **Theo dõi phân loại (Triage)**:
-    *   Quan sát các nhãn màu: **Xanh** (Theo dõi tại nhà), **Vàng** (Cần khám bác sĩ), **Đỏ** (Cấp cứu).
-    *   Nhấp vào phần "Phân tích từ AI" để xem chi tiết dự đoán và các triệu chứng ghi nhận.
-5.  **Quản lý lịch sử**: Xem lại các cuộc hội thoại cũ tại tab **Lịch sử**.
-6.  **Tra cứu cơ sở y tế**: Sử dụng tính năng bản đồ để tìm bệnh viện hoặc nhà thuốc gần nhất.
+To experience all features of **Sức Khỏe Việt AI**, users can follow these steps:
 
-## Các tính năng chính (Key Features)
+1. **Onboarding**: Go through the onboarding screens to understand the core value of the application.
+2. **Registration / Login**: Create a personal account (credentials are securely stored in the local database).
+3. **AI Consultation**:
+   - In the home screen, choose from **Suggested Questions** (e.g. "I have a headache and fever") or type symptoms directly.
+   - Use the **Quick Replies** above the input bar to interact swiftly with the AI assistant.
+4. **Triage Assessment & Classification**:
+   - Observe color-coded urgency tags: **Green** (Home care), **Yellow** (Consult a doctor), **Red** (Emergency care).
+   - Tap "Analysis by AI" to inspect predicted clinical details and symptoms.
+5. **History Management**: Review previous threads in the **History** tab.
+6. **Nearby Medical Facilities**: Use the map feature to locate the nearest hospitals, clinics, or pharmacies.
 
-- **🤖 Trợ lý AI thông minh**: Tư vấn sức khỏe dựa trên công nghệ Gemini AI, phản hồi tự nhiên và chuyên sâu.
-- **🏥 Phân loại bệnh tự động (Triage)**: Hệ thống tự động đánh giá mức độ khẩn cấp của triệu chứng theo chuẩn y tế.
-- **📋 Tóm tắt bệnh án**: Tự động tổng hợp thông tin từ cuộc hội thoại để người dùng dễ dàng trình bày với bác sĩ.
-- **📂 Quản lý lịch sử tư vấn**: Lưu trữ toàn bộ lộ trình sức khỏe cá nhân và gia đình.
-- **📍 Tìm kiếm cơ sở y tế**: Tích hợp bản đồ tìm kiếm bệnh viện, phòng khám và nhà thuốc xung quanh.
-- **📱 Giao diện Adaptive**: Thiết kế hiện đại, mượt mà và tự động tương thích với mọi kích thước màn hình điện thoại.
+---
 
-## Features
+## ✨ Key Features
 
-- **AI Medical Consultation**: Powered by Google's Gemini AI (Firebase AI) to provide health-related information and advice.
-- **Triage & Assessment**: Automatic classification of health issues (GREEN, YELLOW, RED) based on AI analysis.
-- **User Authentication**: Secure local authentication system using Room database.
-- **Modern UI/UX**: Built entirely with Jetpack Compose following Material 3 design guidelines.
-- **Health Profile**: Manage personal health information and medical history.
-- **Location-based Services**: Find nearby medical facilities and pharmacies.
+- **🤖 Smart AI Assistant:** Medical consultation powered by Google's Gemini AI (Firebase AI) providing natural, in-depth clinical advice.
+- **🏥 Automated Triage Tagging:** Evaluates symptom urgency based on clinical protocols.
+- **📋 Medical Record Summary:** Automatically summarizes dialog history so patients can easily present it to doctors.
+- **📂 Consult History Management:** Stores health logs for users and their dependents.
+- **📍 Location-based Map:** Integrates Google Maps/Location API to search for clinics, hospitals, and drugstores.
+- **📱 Responsive UI/UX:** Built entirely with Jetpack Compose following Material 3 guidelines, fully adaptive across various screen sizes.
 
-## Architecture: Clean Architecture + MVVM
+---
 
-The project follows **Clean Architecture** principles combined with **MVVM** to ensure scalability, maintainability, and testability.
+## 🏗️ Architecture: Clean Architecture + MVVM
+
+The project is structured according to **Clean Architecture** principles combined with **MVVM** to ensure modularity, scalability, and testability.
 
 ### 1. Presentation Layer (UI & ViewModel)
-- **Framework**: Jetpack Compose.
-- **Navigation**: Type-safe navigation using Compose Navigation.
-- **State Management**: ViewModel with StateFlow for reactive UI updates.
+- **Framework:** Jetpack Compose (Material 3).
+- **Navigation:** Type-safe Compose Navigation.
+- **State Management:** viewModels exposing StateFlows for reactive UI rendering.
 
 ### 2. Domain Layer (Business Logic)
-- **Entities**: Core models like `ChatThread`, `UserProfile`, `TriageTag`.
-- **Use Cases**: Encapsulates specific logic like `SendMessageUseCase` or `ProcessAiResponseUseCase`.
+- **Entities:** Core models such as `ChatThread`, `UserProfile`, `TriageTag`, and `IoTData`.
+- **Use Cases:** Encapsulates business actions like `SendMessageUseCase`.
 
 ### 3. Data Layer (Implementation)
-- **Repositories**: Coordinates data from Room (local history), Firebase AI (Gemini), and Location services.
-- **AI Integration**: Custom `ChatResponseParser` for structured output from raw LLM text.
+- **Repositories:** Coordinates data from Room (local cache), Firebase AI (Gemini), and Location services.
+- **Data Sources:** Local Room Database, remote Firebase RTDB, and BleIoT Service.
 
-## Directory Structure
-```
+---
+
+## 📂 Directory Structure
+
+```text
 app/src/main/java/edu/hust/medicalaichatbot/
-├── data/               # Data Layer (Repo impl, Room, AI services, Tag Parsers)
+├── data/               # Data Layer (Repositories, Room DAOs, BLE services)
 ├── domain/             # Domain Layer (Business Entities & Use Cases)
 ├── ui/                 # Presentation Layer (Compose UI, ViewModels, Theme)
 └── utils/              # Common Utilities & Constants
 ```
 
-## Tech Stack
+---
 
-- **Language**: Kotlin 2.0+
-- **UI Framework**: Jetpack Compose (Material 3)
-- **Architecture**: Clean Architecture + MVVM
-- **Database**: Room (with Paging 3 support)
-- **AI Integration**: Firebase AI (Gemini API)
-- **Navigation**: Compose Navigation
-- **Concurrency**: Kotlin Coroutines & Flow
-- **JVM Target**: 21
+## 🛠️ Tech Stack
 
-## Setup Requirements
+- **Language:** Kotlin 2.0+
+- **UI Framework:** Jetpack Compose (Material 3)
+- **Architecture:** Clean Architecture + MVVM
+- **Database:** Room (with Paging 3 support)
+- **AI Integration:** Firebase AI (Gemini API)
+- **Networking:** Standard `java.net.HttpURLConnection` running in Coroutines (`Dispatchers.IO`)
+- **IoT Provisioning:** Espressif BLE Provisioning SDK for Android
+- **Event Bus:** GreenRobot EventBus
+- **JVM Target:** 21
+
+---
+
+## ⚙️ Setup Requirements
 
 - Android Studio Ladybug or newer.
 - JDK 21.
 - Firebase project with Gemini AI enabled.
 - `google-services.json` placed in the `app/` directory.
 
-## Firebase AI Setup Guide
+---
 
-To get the AI features working, you need to connect the app to your own Firebase project:
+## 🔗 Secure IoT Device Pairing (RFC 8628 Flow)
 
-1. **Create a Firebase Project**: Go to the [Firebase Console](https://console.firebase.google.com/) and create a new project.
-2. **Add an Android App**: Register your app with the package name `edu.hust.medicalaichatbot`.
-3. **Download configuration**: Download the `google-services.json` file and place it in the `app/` directory of this project.
-4. **Enable Gemini AI for Firebase**: In the Firebase console, go to **Build > Gemini** (or Vertex AI depending on your console version) and click **Get Started**. This enables the Gemini AI capabilities for your project.
-5. **Check API Keys**: Ensure that your API keys have permissions to access the Gemini AI services in the Google Cloud Console.
+The application includes a secure device flow confirmation feature to pair hardware wearables (like the ESP32-S3 band) securely.
 
-For detailed instructions, refer to the [official Firebase documentation for Gemini](https://firebase.google.com/docs/gemini).
+### Sequence Diagram
 
-## 🔗 Secure IoT Device Pairing (RFC 8628)
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Android as Android App (Kotlin)
+    participant Firebase as Firebase RTDB
+    participant Backend as Go Backend
+    participant ESP32 as ESP32-S3 Wearable
 
-The application includes a secure device flow confirmation feature to pair hardware wearables (like the ESP32-S3 band) securely:
-- **BLE Provisioning:** Transmits WiFi SSID & password to the device locally using AES-128-CTR and ECDH key exchange.
-- **RFC 8628 Confirmation:** Automatically pulls `user_code` from Firebase RTDB and validates the device pairing request by generating a cryptographic HMAC-SHA256 signature using the PIN PoP (`"12345678"`) key, then confirms with Backend Go.
-- **Realtime Dashboard:** Receives real-time telemetry updates pushed from Go Backend through Firebase RTDB.
+    User->>Android: Scan QR Code (Get MAC & SessionID)
+    Android->>ESP32: Send WiFi Credentials via BLE (AES-128-CTR)
+    Note over ESP32: Connects to WiFi Router
+    ESP32->>Backend: POST /api/v1/oauth/device/authorize (MAC, SessionID)
+    Backend->>Firebase: Write user_code to /provisioning_polling/{MAC}_{SessionID}
+    Note over ESP32: Starts Polling /api/v1/oauth/token
+    Android->>Firebase: Real-time Listener on /provisioning_polling/{MAC}_{SessionID}
+    Firebase-->>Android: Sync user_code (e.g. ABCD-1234)
+    Note over Android: Display user_code on Profile UI
+    User->>Android: Tap "Chấp nhận kết nối" (Confirm Pairing)
+    Note over Android: Compute Signature = HMAC-SHA256(user_code:MAC:SessionID, Key="12345678")
+    Android->>Backend: POST /api/v1/oauth/device/confirm (user_code, Signature) with User JWT
+    Note over Backend: Validate Signature & Approve Session in Redis
+    Backend-->>Android: HTTP 200 (Pairing Approved)
+    Note over ESP32: Polling HTTP 200 (Retrieve access_token)
+    ESP32->>Backend: Pairs permanently in MongoDB & Wipes Redis cache
+    Note over ESP32: Starts publishing telemetry data over MQTT (Port 1883)
+    Backend->>Firebase: Write live data to devices/{MAC}/latest
+    Firebase-->>Android: WebSockets Stream updates UI real-time
+```
+
+### Flow Breakdown
+
+1. **BLE Setup:** The user scans the QR code on the physical band to capture the MAC address and session parameters. The phone connects locally via BLE (protected by Diffie-Hellman ECDH key agreement and AES-128-CTR) and transfers WiFi credentials.
+2. **Device Registration:** The ESP32 joins WiFi and sends an authorization request to the Go backend, which inserts the session status (`authorization_pending`) into Redis and publishes a 4-letter user code to Firebase RTDB.
+3. **App Confirmation:** The Android app listens to Firebase RTDB, receives the user code, and presents a confirmation card on the **Profile** screen.
+4. **Cryptographic Validation:** Clicking "Confirm" initiates a secure POST request to the Go Backend containing the HMAC-SHA256 signature calculated using the default device PIN PoP (`12345678`) as a secret key, authenticated via the user's JWT.
+5. **Completion:** Go Backend updates the pairing state to approved in Redis. The ESP32 retrieves its permanent access token and starts streaming telemetry data over MQTT, which is synced to the app's real-time charts via Firebase RTDB.
