@@ -61,6 +61,9 @@ class BleIoTService(private val context: Context) {
     }
 
     fun startScanning() {
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this)
+        }
         if (adapter == null || !adapter.isEnabled) {
             Log.e(TAG, "Bluetooth adapter not available or disabled")
             return
@@ -237,6 +240,7 @@ class BleIoTService(private val context: Context) {
 
     fun connectToDevice(device: BluetoothDevice) {
         stopScanning()
+        _scannedDevices.value = emptyList()
         
         // 1. Get BLE MAC and derive WiFi MAC (ESP32: BLE MAC = WiFi MAC + 2)
         val bleMac = device.address.replace(":", "").uppercase()
