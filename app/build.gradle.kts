@@ -74,6 +74,7 @@ android {
         versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "BASE_URL", getSecret("BACKEND_URL", "http://10.0.2.2:8080"))
     }
 
     compileOptions {
@@ -137,6 +138,12 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.tink.android)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging.interceptor)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))

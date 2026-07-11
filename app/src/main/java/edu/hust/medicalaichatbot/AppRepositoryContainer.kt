@@ -12,11 +12,13 @@ import edu.hust.medicalaichatbot.domain.usecase.chat.GetMessagesUseCase
 import edu.hust.medicalaichatbot.domain.usecase.chat.GetThreadsUseCase
 import edu.hust.medicalaichatbot.domain.usecase.chat.SendMessageUseCase
 import edu.hust.medicalaichatbot.utils.Constants
+import edu.hust.medicalaichatbot.utils.PreferenceManager
 
 class AppRepositoryContainer(context: Context) {
     val database = AppDatabase.getDatabase(context)
+    val preferenceManager = PreferenceManager(context)
     
-    val authRepository = AuthRepository(database.userDao(), database.chatDao())
+    val authRepository = AuthRepository(database.userDao(), database.chatDao(), preferenceManager)
     
     val locationService = LocationService(context)
     

@@ -53,13 +53,19 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import edu.hust.medicalaichatbot.utils.PreferenceManager
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.firstOrNull
+import androidx.compose.runtime.rememberCoroutineScope
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val preferenceManager = PreferenceManager(this)
-        preferenceManager.updateLastVisit()
+        lifecycleScope.launch {
+            preferenceManager.updateLastVisit()
+        }
         
         val container = (application as MedicalAIChatbotApplication).appRepositoryContainer
 
@@ -67,7 +73,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MedicalAIChatbotTheme {
                 val authViewModel: AuthViewModel = viewModel(
-                    factory = AuthViewModel.Factory(container.authRepository)
+                    factory = AuthViewModel.Factory(container.authRepository, preferenceManager)
                 )
 
                 val chatViewModel: ChatViewModel = viewModel(
@@ -206,20 +212,30 @@ fun MedicalApp(
                 startDestination = "splash"
             ) {
                 composable("splash") {
+                    val scope = rememberCoroutineScope()
                     SplashScreen(onTimeout = {
-                        val destination = if (preferenceManager.shouldShowOnboarding()) {
-                            "onboarding"
-                        } else {
-                            "login"
-                        }
-                        navController.navigate(destination) {
-                            popUpTo("splash") { inclusive = true }
+                        scope.launch {
+                            val shouldShow = preferenceManager.shouldShowOnboardingFlow.firstOrNull() ?: true
+                            val token = preferenceManager.authTokenFlow.firstOrNull()
+                            val destination = if (shouldShow) {
+                                "onboarding"
+                            } else if (!token.isNullOrEmpty()) {
+                                "home"
+                            } else {
+                                "login"
+                            }
+                            navController.navigate(destination) {
+                                popUpTo("splash") { inclusive = true }
+                            }
                         }
                     })
                 }
                 composable("onboarding") {
+                    val scope = rememberCoroutineScope()
                     OnboardingScreen(onFinish = {
-                        preferenceManager.setFirstTimeLaunch(false)
+                        scope.launch {
+                            preferenceManager.setFirstTimeLaunch(false)
+                        }
                         navController.navigate("login") {
                             popUpTo("onboarding") { inclusive = true }
                         }

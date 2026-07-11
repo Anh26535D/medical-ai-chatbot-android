@@ -5,11 +5,16 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import edu.hust.medicalaichatbot.data.local.entity.User
 import edu.hust.medicalaichatbot.data.repository.AuthRepository
+import edu.hust.medicalaichatbot.utils.PreferenceManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
-class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
+class AuthViewModel(
+    private val repository: AuthRepository,
+    private val preferenceManager: PreferenceManager
+) : ViewModel() {
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
     val authState: StateFlow<AuthState> = _authState
@@ -19,6 +24,25 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
 
     private val _isGuest = MutableStateFlow(false)
     val isGuest: StateFlow<Boolean> = _isGuest
+
+    init {
+        // Auto-login: restore session if token exists
+        viewModelScope.launch {
+            combine(
+                preferenceManager.authTokenFlow,
+                preferenceManager.userPhoneFlow
+            ) { token, phone ->
+                Pair(token, phone)
+            }.collect { (token, phone) ->
+                if (!token.isNullOrEmpty() && !phone.isNullOrEmpty()) {
+                    val user = User(name = "User", phoneNumber = phone, password = "")
+                    _currentUser.value = user
+                    _isGuest.value = false
+                    _authState.value = AuthState.Success(user)
+                }
+            }
+        }
+    }
 
     fun register(user: User) {
         viewModelScope.launch {
@@ -55,20 +79,26 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     }
 
     fun logout() {
-        _currentUser.value = null
-        _isGuest.value = false
-        _authState.value = AuthState.Idle
+        viewModelScope.launch {
+            preferenceManager.clearAuth()
+            _currentUser.value = null
+            _isGuest.value = false
+            _authState.value = AuthState.Idle
+        }
     }
 
     fun resetState() {
         _authState.value = AuthState.Idle
     }
 
-    class Factory(private val repository: AuthRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: AuthRepository,
+        private val preferenceManager: PreferenceManager
+    ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")
-                return AuthViewModel(repository) as T
+                return AuthViewModel(repository, preferenceManager) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }

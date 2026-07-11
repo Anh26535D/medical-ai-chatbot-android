@@ -1,44 +1,47 @@
 package edu.hust.medicalaichatbot.data.service
 
 import android.util.Log
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
+import edu.hust.medicalaichatbot.BuildConfig
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit
 
 object BackendHttpClient {
     private const val TAG = "BackendHttpClient"
-    // Go Backend API base URL
-    private const val BASE_URL = "http://10.0.2.2:8080" // 10.0.2.2 points to localhost of host machine in Android emulator
+    private const val BASE_URL = BuildConfig.BASE_URL
 
-    suspend fun register(phone: String, pass: String): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val url = URL("$BASE_URL/api/v1/auth/register")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
-            conn.doOutput = true
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .addInterceptor(HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BODY
+        })
+        .build()
 
-            val json = JSONObject().apply {
-                put("phone", phone)
-                put("password", pass)
-            }
+    private val retrofit = Retrofit.Builder()
+        .baseUrl(BASE_URL)
+        .client(okHttpClient)
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
 
-            OutputStreamWriter(conn.outputStream).use { it.write(json.toString()) }
+    private val apiService = retrofit.create(BackendApiService::class.java)
 
-            val code = conn.responseCode
-            if (code == 201 || code == 200) {
+    suspend fun register(phone: String, pass: String): Result<String> {
+        return try {
+            val response = apiService.register(RegisterRequest(phone, pass))
+            if (response.isSuccessful) {
                 Result.success("Success")
             } else {
-                val errorStream = conn.errorStream ?: conn.inputStream
-                val errorResponse = BufferedReader(InputStreamReader(errorStream)).readText()
-                val errorMsg = JSONObject(errorResponse).optString("error", "Registration failed")
+                val errorBody = response.errorBody()?.string()
+                val errorMsg = errorBody?.let {
+                    try {
+                        org.json.JSONObject(it).optString("error", "Registration failed")
+                    } catch (e: Exception) {
+                        "Registration failed"
+                    }
+                } ?: "Registration failed"
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
@@ -47,32 +50,25 @@ object BackendHttpClient {
         }
     }
 
-    suspend fun login(phone: String, pass: String): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val url = URL("$BASE_URL/api/v1/auth/login")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
-            conn.doOutput = true
-
-            val json = JSONObject().apply {
-                put("phone", phone)
-                put("password", pass)
-            }
-
-            OutputStreamWriter(conn.outputStream).use { it.write(json.toString()) }
-
-            val code = conn.responseCode
-            if (code == 200) {
-                val response = BufferedReader(InputStreamReader(conn.inputStream)).readText()
-                val token = JSONObject(response).getString("token")
-                Result.success(token)
+    suspend fun login(phone: String, pass: String): Result<String> {
+        return try {
+            val response = apiService.login(LoginRequest(phone, pass))
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    Result.success(body.token)
+                } else {
+                    Result.failure(Exception("Empty login response"))
+                }
             } else {
-                val errorStream = conn.errorStream ?: conn.inputStream
-                val errorResponse = BufferedReader(InputStreamReader(errorStream)).readText()
-                val errorMsg = JSONObject(errorResponse).optString("error", "Login failed")
+                val errorBody = response.errorBody()?.string()
+                val errorMsg = errorBody?.let {
+                    try {
+                        org.json.JSONObject(it).optString("error", "Login failed")
+                    } catch (e: Exception) {
+                        "Login failed"
+                    }
+                } ?: "Login failed"
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
@@ -87,35 +83,30 @@ object BackendHttpClient {
         sessionId: String,
         signature: String,
         token: String
-    ): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val url = URL("$BASE_URL/api/v1/oauth/device/confirm")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
-            conn.doOutput = true
-
-            val json = JSONObject().apply {
-                put("user_code", userCode)
-                put("mac_address", macAddress)
-                put("session_id", sessionId)
-                put("pin_pop_signature", signature)
-            }
-
-            OutputStreamWriter(conn.outputStream).use { it.write(json.toString()) }
-
-            val code = conn.responseCode
-            if (code == 200) {
-                val response = BufferedReader(InputStreamReader(conn.inputStream)).readText()
-                val message = JSONObject(response).optString("message", "Device confirmed")
-                Result.success(message)
+    ): Result<String> {
+        return try {
+            val authHeader = "Bearer $token"
+            val response = apiService.confirmDevice(
+                authHeader,
+                ConfirmRequest(
+                    user_code = userCode,
+                    mac_address = macAddress,
+                    session_id = sessionId,
+                    pin_pop_signature = signature
+                )
+            )
+            if (response.isSuccessful) {
+                val body = response.body()
+                Result.success(body?.message ?: "Device confirmed")
             } else {
-                val errorStream = conn.errorStream ?: conn.inputStream
-                val errorResponse = BufferedReader(InputStreamReader(errorStream)).readText()
-                val errorMsg = JSONObject(errorResponse).optString("error", "Confirmation failed")
+                val errorBody = response.errorBody()?.string()
+                val errorMsg = errorBody?.let {
+                    try {
+                        org.json.JSONObject(it).optString("error", "Confirmation failed")
+                    } catch (e: Exception) {
+                        "Confirmation failed"
+                    }
+                } ?: "Confirmation failed"
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {

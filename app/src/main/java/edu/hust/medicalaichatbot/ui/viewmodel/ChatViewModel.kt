@@ -43,12 +43,16 @@ class ChatViewModel(
     }
 
     fun saveCurrentThreadId(preferenceManager: PreferenceManager) {
-        preferenceManager.setLastThreadId(_currentThreadId.value)
+        viewModelScope.launch {
+            preferenceManager.setLastThreadId(_currentThreadId.value)
+        }
     }
 
     fun restoreLastThread(preferenceManager: PreferenceManager) {
         if (_currentThreadId.value == null) {
-            _currentThreadId.value = preferenceManager.getLastThreadId()
+            viewModelScope.launch {
+                _currentThreadId.value = preferenceManager.lastThreadIdFlow.firstOrNull()
+            }
         }
     }
 
