@@ -328,10 +328,8 @@ fun IoTMonitoringSection(
                 Text(
                     text = if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED && !connectedDeviceName.isNullOrEmpty()) {
                         "THIẾT BỊ ĐEO ($connectedDeviceName)"
-                    } else if (currentDeviceId.isNotEmpty()) {
-                        "THIẾT BỊ ĐEO (Đã ghép đôi)"
                     } else {
-                        "THIẾT BỊ ĐEO (Chưa ghép đôi)"
+                        "THIẾT BỊ ĐEO"
                     },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -341,7 +339,7 @@ fun IoTMonitoringSection(
                     text = when(connectionState) {
                         android.bluetooth.BluetoothProfile.STATE_CONNECTED -> "Đã kết nối BLE"
                         android.bluetooth.BluetoothProfile.STATE_CONNECTING -> "Đang kết nối..."
-                        else -> if (currentDeviceId.isNotEmpty() || deviceAddress != null) "Đã nhận diện (Cloud)" else "Chưa ghép đôi thiết bị"
+                        else -> if (currentDeviceId.isNotEmpty()) "Đã ghép đôi thiết bị" else "Chưa ghép đôi thiết bị"
                     },
                     fontSize = 10.sp,
                     color = if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) SuccessGreen else TextGray
@@ -390,12 +388,29 @@ fun IoTMonitoringSection(
                 border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.2f))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Thiết bị tìm thấy",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = Color.Black
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Thiết bị tìm thấy",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = Color.Black
+                        )
+                        IconButton(
+                            onClick = { viewModel.stopScanning() },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = TextGray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(modifier = Modifier.heightIn(max = 200.dp)) {
                         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {

@@ -190,6 +190,10 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
         bleService.startScanning()
     }
 
+    fun stopScanning() {
+        bleService.stopScanning()
+    }
+
     fun connectToDevice(device: BluetoothDevice) {
         if (isGuest) return
         bleService.connectToDevice(device)
