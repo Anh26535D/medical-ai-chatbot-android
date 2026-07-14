@@ -46,6 +46,9 @@ class BleIoTService(private val context: Context) {
     private val _provisioningStatus = MutableStateFlow<String?>(null)
     val provisioningStatus = _provisioningStatus.asStateFlow()
 
+    // Store dynamic Service UUID from advertisement packets to support multiple devices in production
+    private val deviceServiceUuids = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
@@ -92,6 +95,14 @@ class BleIoTService(private val context: Context) {
                 Log.d(TAG, "Scanned device: $deviceName [${result.device.address}]")
                 
                 if (deviceName != null && deviceName.startsWith(DEVICE_PREFIX)) {
+                    // Extract advertised Service UUID from ScanRecord
+                    val serviceUuids = result.scanRecord?.serviceUuids
+                    serviceUuids?.firstOrNull()?.let { parcelUuid ->
+                        val uuidStr = parcelUuid.uuid.toString()
+                        deviceServiceUuids[result.device.address] = uuidStr
+                        Log.i(TAG, "Extracted advertised Service UUID: $uuidStr for device ${result.device.address}")
+                    }
+
                     val currentList = _scannedDevices.value.toMutableList()
                     if (currentList.none { it.address == result.device.address }) {
                         Log.i(TAG, "Found matching IoT device: $deviceName")
@@ -153,7 +164,8 @@ class BleIoTService(private val context: Context) {
         val uuidToUse = if (serviceUuid != null && serviceUuid.length >= 32) {
             serviceUuid
         } else {
-            "021a90aa-bb37-4316-b062-02b97c0f2095"
+            // Fallback to the UUID derived from ESP32 default little-endian array {0xb4, 0xdf, ...}
+            "021a9004-0382-4aea-bff4-6b3f1c5adfb4"
         }
         Log.i(TAG, "Connecting to device with service UUID: $uuidToUse")
         
@@ -242,11 +254,11 @@ class BleIoTService(private val context: Context) {
         stopScanning()
         _scannedDevices.value = emptyList()
         
-        // 1. Get BLE MAC and derive WiFi MAC (ESP32: BLE MAC = WiFi MAC + 2)
+        // 1. Get BLE MAC and derive WiFi MAC (ESP32-S3: BLE MAC = WiFi MAC + 1)
         val bleMac = device.address.replace(":", "").uppercase()
         val derivedWifiMac = try {
             val bleLong = bleMac.toLong(16)
-            String.format("%012X", bleLong - 2)
+            String.format("%012X", bleLong - 1)
         } catch (e: Exception) {
             bleMac
         }
@@ -264,7 +276,9 @@ class BleIoTService(private val context: Context) {
 
         _discoveredAddress.value = macAddress
         _connectedDeviceName.value = device.name
-        initiateStandardProvisioning(device, null)
+
+        val serviceUuid = deviceServiceUuids[device.address]
+        initiateStandardProvisioning(device, serviceUuid)
     }
 
     fun disconnect() {

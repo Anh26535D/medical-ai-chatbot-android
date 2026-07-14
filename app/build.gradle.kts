@@ -164,6 +164,7 @@ dependencies {
     implementation(libs.firebase.ai)
     implementation(libs.firebase.config)
     implementation(libs.firebase.database)
+    implementation("com.google.firebase:firebase-auth")
 
     // Room
     implementation(libs.androidx.room.runtime)

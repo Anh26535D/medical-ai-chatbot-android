@@ -58,10 +58,29 @@ import edu.hust.medicalaichatbot.utils.PreferenceManager
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.firstOrNull
 import androidx.compose.runtime.rememberCoroutineScope
+import com.google.firebase.auth.FirebaseAuth
+import android.util.Log
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Sign in anonymously to Firebase on app startup to satisfy secure database rules
+        // (auth != null), but only as a fallback for guest browsing. If a previous
+        // signInWithCustomToken session (see BackendHttpClient.login) already persisted,
+        // FirebaseAuth restores it automatically — don't clobber that with an anonymous
+        // uid, since telemetry paths and RTDB rules require FirebaseAuth's uid to match
+        // the backend's own user ID.
+        if (FirebaseAuth.getInstance().currentUser == null) {
+            FirebaseAuth.getInstance().signInAnonymously()
+                .addOnSuccessListener {
+                    Log.i("Firebase_Auth", "Successfully signed in anonymously to Firebase RTDB")
+                }
+                .addOnFailureListener { e ->
+                    Log.e("Firebase_Auth", "Failed to sign in anonymously to Firebase: ${e.message}")
+                }
+        }
+
         val preferenceManager = PreferenceManager(this)
         lifecycleScope.launch {
             preferenceManager.updateLastVisit()

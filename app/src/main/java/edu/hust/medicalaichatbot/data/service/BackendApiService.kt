@@ -17,7 +17,8 @@ data class LoginRequest(
 )
 
 data class LoginResponse(
-    val token: String
+    val token: String,
+    val firebase_token: String? = null
 )
 
 data class ConfirmRequest(
@@ -47,5 +48,11 @@ interface BackendApiService {
     suspend fun confirmDevice(
         @Header("Authorization") token: String,
         @Body request: ConfirmRequest
+    ): Response<ConfirmResponse>
+
+    @retrofit2.http.DELETE("api/v1/devices/{mac}")
+    suspend fun unpairDevice(
+        @Header("Authorization") token: String,
+        @retrofit2.http.Path("mac") mac: String
     ): Response<ConfirmResponse>
 }

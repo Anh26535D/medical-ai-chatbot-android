@@ -19,6 +19,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -232,6 +239,7 @@ fun IoTMonitoringSection(
     
     val discoveredUserCode by viewModel.discoveredUserCode.collectAsState()
     val activeSessionId by viewModel.activeSessionId.collectAsState()
+    val activePairingMac by viewModel.activePairingMac.collectAsState()
     val confirmStatus by viewModel.confirmStatus.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val scannedDevices by viewModel.scannedDevices.collectAsState()
@@ -240,6 +248,7 @@ fun IoTMonitoringSection(
     var wifiSsid by remember(suggestedSsid) { mutableStateOf(suggestedSsid) }
     var wifiPass by remember { mutableStateOf("") }
     var showWifiConfig by remember { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(connectionState) {
         if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
@@ -283,10 +292,8 @@ fun IoTMonitoringSection(
                         onClick = {
                             viewModel.confirmDevice(
                                 userCode = discoveredUserCode!!,
-                                macAddress = deviceAddress ?: currentDeviceId,
-                                sessionId = activeSessionId!!,
-                                userPhone = currentUser.phoneNumber,
-                                userPass = currentUser.password
+                                macAddress = activePairingMac ?: deviceAddress ?: currentDeviceId,
+                                sessionId = activeSessionId!!
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -348,15 +355,27 @@ fun IoTMonitoringSection(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (connectionState == android.bluetooth.BluetoothProfile.STATE_DISCONNECTED) {
-                    Text(
-                        text = "KẾT NỐI BLE",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryBlue,
-                        modifier = Modifier
-                            .clickable { viewModel.connectBle() }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                    if (currentDeviceId.isNotEmpty()) {
+                        Text(
+                            text = "HỦY GHÉP ĐÔI",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Red,
+                            modifier = Modifier
+                                .clickable { viewModel.unpairDevice() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "KẾT NỐI BLE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlue,
+                            modifier = Modifier
+                                .clickable { viewModel.connectBle() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 } else if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
                     IconButton(onClick = { showWifiConfig = !showWifiConfig }) {
                         Icon(
@@ -493,12 +512,19 @@ fun IoTMonitoringSection(
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
                     
+                    var passwordVisible by remember { mutableStateOf(false) }
+
                     OutlinedTextField(
                         value = wifiSsid,
                         onValueChange = { wifiSsid = it },
                         label = { Text("Tên WiFi (SSID)", fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Next,
+                            autoCorrect = false
+                        ),
                         shape = RoundedCornerShape(8.dp)
                     )
                     
@@ -510,14 +536,42 @@ fun IoTMonitoringSection(
                         label = { Text("Mật khẩu", fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done,
+                            autoCorrect = false
+                        ),
+                        trailingIcon = {
+                            val image = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
+                            IconButton(
+                                onClick = {},
+                                modifier = Modifier.pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            if (event.type == PointerEventType.Press) {
+                                                passwordVisible = true
+                                            } else if (event.type == PointerEventType.Release) {
+                                                passwordVisible = false
+                                            }
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(imageVector = image, contentDescription = if (passwordVisible) "Ẩn mật khẩu" else "Hiện mật khẩu")
+                            }
+                        },
                         shape = RoundedCornerShape(8.dp)
                     )
                     
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     Button(
-                        onClick = { viewModel.sendWifiCredentials(wifiSsid, wifiPass) },
+                        onClick = {
+                            keyboardController?.hide()
+                            viewModel.sendWifiCredentials(wifiSsid, wifiPass)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
@@ -526,24 +580,27 @@ fun IoTMonitoringSection(
                         if (provisioningStatus == "SENDING") {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                         } else {
-                            Text("Gửi cấu hình")
+                            Text("Kết nối")
                         }
                     }
                     
-                    if (provisioningStatus != null) {
+                    if (provisioningStatus in listOf("SENDING", "SUCCESS", "FAILED", "NOT_FOUND")) {
                         val (statusText, statusColor) = when(provisioningStatus) {
+                            "SENDING" -> "Đang gửi..." to PrimaryBlue
                             "SUCCESS" -> "Đã gửi thành công!" to SuccessGreen
                             "FAILED" -> "Gửi thất bại. Thử lại?" to Color.Red
                             "NOT_FOUND" -> "Không tìm thấy dịch vụ provisioning" to Color.Red
-                            else -> "Đang gửi..." to PrimaryBlue
+                            else -> "" to Color.Transparent
                         }
-                        Text(
-                            text = statusText,
-                            fontSize = 12.sp,
-                            color = statusColor,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally)
-                        )
+                        if (statusText.isNotEmpty()) {
+                            Text(
+                                text = statusText,
+                                fontSize = 12.sp,
+                                color = statusColor,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally)
+                            )
+                        }
                     }
                 }
             }
